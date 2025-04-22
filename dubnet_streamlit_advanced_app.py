@@ -4,58 +4,69 @@ import pandas as pd
 from sklearn.ensemble import RandomForestRegressor
 from sklearn.preprocessing import LabelEncoder
 
-# بيانات تدريب افتراضية واقعية مستوحاة من أداء منصة الدب نت وشركة الأداء العالي
-data = {
-    "Ad_Nature": [
-        "تغطية ميدانية", "إعلان منتج", "إعلان موسمي", "إعلان سريع",
-        "إعلان منتج", "تغطية ميدانية", "إعلان سريع", "إعلان موسمي"
-    ],
-    "Ad_Duration": [
-        "1 يوم", "3 أيام", "أسبوع", "1 يوم",
-        "3 أيام", "أسبوع", "1 يوم", "أسبوع"
-    ],
-    "Platform": [
-        "Snapchat", "Instagram", "TikTok", "Snapchat",
-        "Instagram", "TikTok", "Snapchat", "Instagram"
-    ],
-    "Offered_Price": [
-        12000, 15000, 20000, 9000,
-        14000, 23000, 10000, 17000
-    ]
+# بيانات تدريب واقعية مستوحاة من "الدب نت" + ملف الأداء العالي
+internal_data = {
+    "Ad_Nature": ["تغطية ميدانية", "إعلان منتج", "إعلان موسمي", "إعلان سريع"] * 3,
+    "Ad_Duration": ["1 يوم", "3 أيام", "أسبوع"] * 4,
+    "Platform": ["Snapchat", "Instagram", "TikTok"] * 4,
+    "Offered_Price": [12000, 15000, 18000, 9000, 14000, 20000, 23000, 11000, 17500, 14500, 21000, 16000]
 }
+df_internal = pd.DataFrame(internal_data)
 
-df = pd.DataFrame(data)
+# بيانات منافسين تقريبية (تمثيلية لأغراض المقارنة)
+market_data = {
+    "Ad_Nature": ["تغطية ميدانية", "إعلان منتج", "إعلان موسمي", "إعلان سريع"] * 2,
+    "Ad_Duration": ["1 يوم", "3 أيام", "أسبوع"] * 2 + ["1 يوم", "3 أيام"],
+    "Platform": ["Snapchat", "Instagram", "TikTok"] * 2,
+    "Offered_Price": [13500, 17000, 20000, 11000, 16000, 22000, 25000, 13000, 18500, 16500]
+}
+df_market = pd.DataFrame(market_data)
 
 # ترميز البيانات
-le_nature = LabelEncoder()
-le_duration = LabelEncoder()
-le_platform = LabelEncoder()
-df["Nature_Code"] = le_nature.fit_transform(df["Ad_Nature"])
-df["Duration_Code"] = le_duration.fit_transform(df["Ad_Duration"])
-df["Platform_Code"] = le_platform.fit_transform(df["Platform"])
+encoders = {}
+def encode(df):
+    for col in ["Ad_Nature", "Ad_Duration", "Platform"]:
+        encoders[col] = LabelEncoder()
+        df[col + "_Code"] = encoders[col].fit_transform(df[col])
+    return df
 
-# بناء النموذج
-X = df[["Nature_Code", "Duration_Code", "Platform_Code"]]
-y = df["Offered_Price"]
-model = RandomForestRegressor(n_estimators=150, random_state=42)
-model.fit(X, y)
+df_internal = encode(df_internal)
+df_market = encode(df_market)
 
-# واجهة المستخدم
-st.set_page_config(page_title="سعر الإعلان التنبؤي - منصة الدب نت", layout="centered")
-st.title("🔮 توقع سعر الإعلان حسب النوع، المدة، والمنصة")
+# تدريب النموذجين
+model_internal = RandomForestRegressor(n_estimators=100, random_state=42)
+model_internal.fit(df_internal[["Ad_Nature_Code", "Ad_Duration_Code", "Platform_Code"]], df_internal["Offered_Price"])
 
-ad_nature = st.selectbox("📝 طبيعة الإعلان", le_nature.classes_)
-ad_duration = st.selectbox("⏱️ مدة الإعلان", le_duration.classes_)
-platform = st.selectbox("📱 المنصة", le_platform.classes_)
+model_market = RandomForestRegressor(n_estimators=100, random_state=42)
+model_market.fit(df_market[["Ad_Nature_Code", "Ad_Duration_Code", "Platform_Code"]], df_market["Offered_Price"])
 
-if st.button("توقع السعر"):
-    nat_code = le_nature.transform([ad_nature])[0]
-    dur_code = le_duration.transform([ad_duration])[0]
-    plat_code = le_platform.transform([platform])[0]
-    predicted_price = model.predict([[nat_code, dur_code, plat_code]])[0]
-    tax = predicted_price * 0.15
-    total = predicted_price + tax
+# واجهة Streamlit
+st.set_page_config(page_title="توقع سعر الإعلان - الدب نت", layout="centered")
+st.title("🔮 توقع سعر الإعلان حسب طبيعة الإعلان، مدته، والمنصة")
 
-    st.success(f"✅ السعر المتوقع بدون ضريبة: {round(predicted_price)} ريال سعودي")
-    st.info(f"💸 السعر بعد الضريبة 15%: {round(total)} ريال سعودي")
-    st.caption("📈 يستند التنبؤ على بيانات الأداء العالي ومنصة الدب نت ويعكس تطور المنصة ونمو جمهورها.")
+# إدخال البيانات
+ad_nature = st.selectbox("📝 طبيعة الإعلان", encoders["Ad_Nature"].classes_)
+ad_duration = st.selectbox("⏱️ مدة الإعلان", encoders["Ad_Duration"].classes_)
+platform = st.selectbox("📱 المنصة", encoders["Platform"].classes_)
+
+show_market_comparison = st.checkbox("📊 مقارنة مع أسعار السوق", value=True)
+
+if st.button("🔎 توقع السعر"):
+    encoded = {
+        "Ad_Nature_Code": encoders["Ad_Nature"].transform([ad_nature])[0],
+        "Ad_Duration_Code": encoders["Ad_Duration"].transform([ad_duration])[0],
+        "Platform_Code": encoders["Platform"].transform([platform])[0],
+    }
+    input_data = [[encoded["Ad_Nature_Code"], encoded["Ad_Duration_Code"], encoded["Platform_Code"]]]
+
+    price_internal = model_internal.predict(input_data)[0]
+    total_internal = price_internal + (price_internal * 0.15)
+    st.success(f"✅ السعر المتوقع حسب منصة الدب نت (بدون ضريبة): {round(price_internal)} ريال سعودي")
+    st.info(f"💰 السعر بعد الضريبة 15٪: {round(total_internal)} ريال سعودي")
+
+    if show_market_comparison:
+        price_market = model_market.predict(input_data)[0]
+        st.divider()
+        st.subheader("📈 مقارنة بالسوق الإعلاني")
+        st.write(f"💼 متوسط السعر لدى المنصات المنافسة: {round(price_market)} ريال سعودي")
+        st.caption("📝 تم التقدير بناءً على بيانات تمثيلية لمنصات مثل عرب جي تي وسعودي شفت.")
